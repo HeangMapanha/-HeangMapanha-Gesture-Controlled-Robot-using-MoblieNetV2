@@ -1,0 +1,5 @@
+export.py
+pip install opencv-python mediapipe numpy
+
+webcam.py
+pip install opencv-python numpy mediapipe onnxruntime
