@@ -1,6 +1,6 @@
 import os
 import cv2
-
+# Use for Resizing images to 224x224
 # Path to your dataset
 dataset_path = r"C:\Users\USER\Desktop\CNNmodel\rawdata\dataset_add\valid"
 target_size = (224, 224)  # width, height

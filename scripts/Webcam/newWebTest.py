@@ -50,7 +50,7 @@ def softmax(x):
 # -----------------------------
 # Webcam capture
 # -----------------------------
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 prev_time = time.time()
 
 while True:
