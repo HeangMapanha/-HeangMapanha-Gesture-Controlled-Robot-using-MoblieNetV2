@@ -11,7 +11,7 @@ from auppbot import AUPPBot
 
 # ================= CONFIG =================
 MODEL_PATH = "hand_model.onnx"
-CLASS_NAMES = ["forward", "backward", "left", "right", "stop"]
+CLASS_NAMES = ["fist", "thumb", "one", "two", "palm"]
 CAM_INDEX = 0
 W, H = 640, 480
 BUFFER_SIZE = 5
@@ -23,6 +23,9 @@ BAUD = 115200
 MOVE_SPEED = 20
 TURN_SPEED = 15
 TURN_DURATION = 0.5
+
+# Timeout after losing hand detection before stopping (seconds)
+NO_DETECTION_TIMEOUT = 1.0
 
 # Shared frame buffer for web streaming
 frame_queue = Queue(maxsize=1)
@@ -49,26 +52,26 @@ def set_tank(bot, left, right):
         bot.motor3.speed(right); bot.motor4.speed(right)
     except: pass
 
-def execute_gesture(bot, gesture, last_gesture="forward"):
-    if gesture == "forward":
+def execute_gesture(bot, gesture, last_gesture="palm"):
+    if gesture == "fist":  # forward
         set_tank(bot, MOVE_SPEED, MOVE_SPEED)
-    elif gesture == "backward":
+    elif gesture == "thumb":  # reverse
         set_tank(bot, -MOVE_SPEED, -MOVE_SPEED)
-    elif gesture == "left":
+    elif gesture == "one":  # left
         set_tank(bot, -TURN_SPEED, TURN_SPEED)
         time.sleep(TURN_DURATION)
         set_tank(bot, 0, 0)
-    elif gesture == "right":
+    elif gesture == "two":  # right
         set_tank(bot, TURN_SPEED, -TURN_SPEED)
         time.sleep(TURN_DURATION)
         set_tank(bot, 0, 0)
-    elif gesture == "stop":
+    elif gesture == "palm":  # stop
         set_tank(bot, 0, 0)
     else:
         # continue last movement if unknown gesture
-        if last_gesture == "forward":
+        if last_gesture == "fist":
             set_tank(bot, MOVE_SPEED, MOVE_SPEED)
-        elif last_gesture == "backward":
+        elif last_gesture == "thumb":
             set_tank(bot, -MOVE_SPEED, -MOVE_SPEED)
 
 # ==================== ROBOT LOOP ====================
@@ -80,13 +83,16 @@ def robot_loop():
     cap = cv2.VideoCapture(CAM_INDEX)
     cap.set(3, W); cap.set(4, H)
     gesture_buffer = deque(maxlen=BUFFER_SIZE)
-    last_confirmed = "stop"
+    last_confirmed = "palm"
     last_detect_time = time.time()
+
+    fps = 0
+    prev_time = time.time()
 
     while True:
         ret, frame = cap.read()
         if not ret: continue
-
+        frame = cv2.flip(frame, 1)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         result = hands.process(rgb)
         confirmed_gesture = None
@@ -115,17 +121,31 @@ def robot_loop():
                         last_confirmed = g
                         break
 
-                # draw box
+                # draw box + label
                 cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
-                if confirmed_gesture: cv2.putText(frame,f"{confirmed_gesture} ({conf:.2f})",(x1,y1-10),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,255,0),2)
-                else: cv2.putText(frame,"Detecting...",(x1,y1-10),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,0,255),2)
+                if confirmed_gesture:
+                    cv2.putText(frame,f"{confirmed_gesture} ({conf:.2f})",(x1,y1-10),
+                                cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,255,0),2)
+                else:
+                    cv2.putText(frame,"Detecting...",(x1,y1-10),
+                                cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,0,255),2)
         else:
-            gesture_buffer.clear()
-            set_tank(bot,0,0)
-            cv2.putText(frame,"No hand",(10,30),cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,255),2)
+            # No hand detected → check timeout
+            if time.time() - last_detect_time > NO_DETECTION_TIMEOUT:
+                confirmed_gesture = "palm"  # Stop
+                last_confirmed = "palm"
+            else:
+                # keep last gesture temporarily
+                confirmed_gesture = last_confirmed
 
         # Execute gesture
         if confirmed_gesture: execute_gesture(bot, confirmed_gesture, last_confirmed)
+
+        # ------------------- FPS calculation -------------------
+        curr_time = time.time()
+        fps = 1/(curr_time - prev_time)
+        prev_time = curr_time
+        cv2.putText(frame, f"FPS: {fps:.1f}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
 
         # Update shared frame for streaming
         if not frame_queue.full(): frame_queue.put(frame.copy())

@@ -23,12 +23,20 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# Labels and preprocessing
+# Labels, preprocessing, mapping
 # -----------------------------
 labels = ['fist', 'one', 'palm', 'thumb', 'two']
 
+# Map gestures to robot-like actions
+gesture_action_map = {
+    'fist': 'Forward',
+    'thumb': 'Backward',
+    'one': 'Left',
+    'two': 'Right',
+    'palm': 'Stop'
+}
+
 def preprocess_for_model(bgr_img):
-    # Resize directly to 224x224
     resized = cv2.resize(bgr_img, (224, 224))
     rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     arr = rgb.astype(np.float32) / 255.0
@@ -53,6 +61,8 @@ while True:
     frame = cv2.flip(frame, 1)
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = hands.process(rgb_frame)
+
+    action_text = "No hand detected"
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
@@ -94,7 +104,10 @@ while True:
             pred_label = labels[pred_idx]
             confidence = float(probs[0, pred_idx])
 
-            display_text = f"{pred_label} {confidence:.2f}"
+            # Map to action
+            action_text = gesture_action_map.get(pred_label, "Unknown")
+
+            display_text = f"{pred_label} ({confidence:.2f}) -> {action_text}"
             cv2.putText(frame, display_text, (x_min, y_min - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
 
@@ -105,6 +118,9 @@ while True:
     fps = 1 / (curr_time - prev_time + 1e-6)
     prev_time = curr_time
     cv2.putText(frame, f"FPS: {fps:.1f}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
+
+    # Display action text prominently
+    cv2.putText(frame, f"Action: {action_text}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
 
     cv2.imshow("Gesture Recognition (ONNX)", frame)
     if cv2.waitKey(1) & 0xFF == 27:  # ESC
